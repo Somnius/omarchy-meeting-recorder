@@ -82,7 +82,7 @@ fn main() -> glib::ExitCode {
         Some("ask") => agent::cli(&std::env::args().skip(2).collect::<Vec<_>>()),
         Some("-h" | "--help") => {
             println!(
-                "Usage: {APP_NAME} [start | stop | pause | compact | watch | transcribe <mic> <computer> [--language xx]]"
+                "Usage: {APP_NAME} [start [name] | stop | pause | compact | watch | transcribe <mic> <computer> [--language xx]]"
             );
             println!();
             println!("  (no command)  open the recorder, ready to record");
