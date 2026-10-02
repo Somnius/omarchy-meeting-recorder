@@ -312,7 +312,11 @@ struct Region {
 
 const FRAME: usize = WHISPER_RATE * 30 / 1000;
 
-/// Frames of `track` with sound in them: above four times its own noise floor.
+/// Frames of `track` with sound in them: above its own noise floor by a
+/// third of the way up to its speech level, between 3 dB and 12 dB (four
+/// times). A clean track keeps the 12 dB; on a noisy mic, where speech stands
+/// only 10 to 15 dB over the floor, a fixed 12 dB dropped most of the speech
+/// (#27; the bench's `noisy-mic`).
 fn active_frames(track: &[f32], frames: usize) -> Vec<bool> {
     let energies: Vec<f32> = track.chunks(FRAME).map(rms).collect();
     let mut active = vec![false; frames];
@@ -322,7 +326,10 @@ fn active_frames(track: &[f32], frames: usize) -> Vec<bool> {
     let mut sorted = energies.clone();
     sorted.sort_by(f32::total_cmp);
     let floor = sorted[sorted.len() / 10];
-    let threshold = (floor * 4.0).max(0.002);
+    let speech = sorted[(sorted.len() * 95 / 100).min(sorted.len() - 1)];
+    let gap_db = 20.0 * (speech.max(1e-9) / floor.max(1e-9)).log10();
+    let margin_db = (gap_db / 3.0).clamp(3.0, 12.0);
+    let threshold = (floor * 10f32.powf(margin_db / 20.0)).max(0.002);
     for (i, energy) in energies.iter().enumerate().take(frames) {
         if *energy >= threshold {
             active[i] = true;
@@ -1452,6 +1459,36 @@ mod tests {
             speaker: speaker.into(),
             text: text.into(),
         }
+    }
+
+    /// A track of 30 ms frames at the given RMS levels.
+    fn frames_at(levels: &[f32]) -> Vec<f32> {
+        levels
+            .iter()
+            .flat_map(|level| (0..FRAME).map(move |i| if i % 2 == 0 { *level } else { -*level }))
+            .collect()
+    }
+
+    #[test]
+    fn speech_close_to_a_noisy_floor_still_counts() {
+        // A noisy mic: floor at 0.025 (-32 dBFS), speech at 0.06 (-24 dBFS),
+        // 7.6 dB over it, under the fixed 12 dB.
+        let mut levels = vec![0.025; 80];
+        levels.extend(vec![0.06; 20]);
+        let active = active_frames(&frames_at(&levels), levels.len());
+        assert!(active[..80].iter().all(|a| !a), "the noise stays out");
+        assert!(active[80..].iter().all(|a| *a), "the speech is kept");
+    }
+
+    #[test]
+    fn a_clean_track_keeps_the_full_margin() {
+        // Floor at 0.001, speech at 0.1 (40 dB over): 12 dB, as before.
+        let mut levels = vec![0.001; 80];
+        levels.extend(vec![0.0035; 5]); // 10.9 dB over the floor: not sound
+        levels.extend(vec![0.1; 15]);
+        let active = active_frames(&frames_at(&levels), levels.len());
+        assert!(active[..85].iter().all(|a| !a));
+        assert!(active[85..].iter().all(|a| *a));
     }
 
     #[test]
