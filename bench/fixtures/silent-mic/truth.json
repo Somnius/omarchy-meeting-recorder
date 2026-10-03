@@ -1,6 +1,6 @@
 {
  "kind": "call",
- "about": "The call with nobody speaking on your side: the mic hears only quiet room noise (about -60 dBFS). Nothing may be put on you.",
+ "about": "The call with nobody speaking on your side: the mic only hears room noise at about -38 dBFS. No line may be yours.",
  "truth": [
   {
    "speaker": "Anna",
