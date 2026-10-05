@@ -581,6 +581,7 @@ pub fn transcribe(
     // otherwise lose the quieter one. The side of a line is then its track.
     let (mic, computer) = (mix(mic, &[]), mix(computer, &[]));
     let mic_regions = own_speech_regions(&mic, &computer);
+    let loud = active_frames(&mic, mic.len().div_ceil(FRAME));
     let computer_regions = speech_regions(&[&computer], computer.len());
     if mic_regions.is_empty() && computer_regions.is_empty() {
         emit(events, Event::Progress(1.0));
@@ -646,7 +647,11 @@ pub fn transcribe(
                 .filter(|l| {
                     echo.is_empty() || crate::diarize::speaker_at(echo, l.start_ms, l.end_ms) == 0
                 })
-                .filter(|l| !mine || voice_heard(heard.as_deref(), l.start_ms, l.end_ms)),
+                .filter(|l| {
+                    !mine
+                        || loud_enough(&loud, l.start_ms, l.end_ms)
+                        || voice_heard(heard.as_deref(), l.start_ms, l.end_ms)
+                }),
         );
         done += share;
     }
@@ -829,6 +834,17 @@ fn voices_heard(
             Ok((Vec::new(), None))
         }
     }
+}
+
+/// Whether a line falls where the fixed bar of `active_frames` found sound
+/// too, so the lowered bar did not add it.
+fn loud_enough(loud: &[bool], start_ms: i64, end_ms: i64) -> bool {
+    let (first, last) = (
+        ms_to_sample(start_ms) / FRAME,
+        ms_to_sample(end_ms).div_ceil(FRAME),
+    );
+    loud.get(first..last.min(loud.len()))
+        .is_some_and(|f| f.iter().any(|a| *a))
 }
 
 /// Whether a line of yours falls where the speaker model heard a voice on
